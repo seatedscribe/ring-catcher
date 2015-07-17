@@ -1,0 +1,178 @@
+#include "CTestSM.h"
+
+
+//#define NDEBUG
+#include <assert.h>
+
+//#define WARMING_DELAY 1500
+
+TestMachine::TestMachine() : fsm(NULL), m_loop(0), m_leap(1), m_event_n(1), m_expected_state(STATE::OFF) {}
+
+void TestMachine::reset() {
+    m_loop    = 0;
+    m_leap    = 1;
+    m_event_n = 1;
+    m_expected_state = STATE::OFF;
+    while (not q.empty()) {q.pop();}
+    if (fsm) {
+        delete fsm;
+        fsm = NULL;
+    }
+    std::cout<<"reset completed"<<std::endl;
+}
+
+
+void TestMachine::slowWarmup() {
+
+    // example of minimum evolution
+
+    std::cout<<"\n\n **** STARTING TEST slowWarmup() ****"<<std::endl;
+    q.push(TestEvent(                   RADAR_POWER_ON,     STATE::OFF));
+    q.push(TestEvent(2,                 IOS_OPERATE,        STATE::WARMUP));
+    q.push(TestEvent(WARMING_DELAY,     EVENT_NULL,         STATE::STANDBY));
+    q.push(TestEvent(1,                 WOW_FALSE,          STATE::ON));
+    q.push(TestEvent(                   RADAR_POWER_OFF,    STATE::OFF));
+    q.push(TestEvent(2,                 RADAR_POWER_ON,     STATE::WARMUP));
+    q.push(TestEvent(WARMING_DELAY,     EVENT_NULL,         STATE::STANDBY));
+
+    assert(start());
+
+}
+
+void TestMachine::quickWarmup() {
+    std::cout<<"\n\n **** STARTING TEST quickWarmup() ****"<<std::endl;
+    q.push(TestEvent(    RADAR_POWER_ON,     STATE::OFF));
+    q.push(TestEvent(    QUICK_WARMUP_TRUE,  STATE::OFF));
+    q.push(TestEvent(2,  IOS_OPERATE,        STATE::WARMUP));
+    q.push(TestEvent(1,  EVENT_NULL,         STATE::STANDBY));
+    q.push(TestEvent(1,  WOW_FALSE,          STATE::ON));
+
+    assert(start());
+}
+
+void TestMachine::quickWarmup2() {
+
+    //if we are in warmup but quick-warmup switches to true, there is no delay and we got straight in standby
+    std::cout<<"\n\n **** STARTING TEST quickWarmup2() ****"<<std::endl;
+    q.push(TestEvent(    RADAR_POWER_ON,     STATE::OFF));
+    q.push(TestEvent(    IOS_OPERATE,        STATE::WARMUP));
+    q.push(TestEvent(    QUICK_WARMUP_TRUE,  STATE::STANDBY));
+    q.push(TestEvent(7,  EVENT_NULL,         STATE::STANDBY));
+    q.push(TestEvent(1,  WOW_FALSE,          STATE::ON));
+    q.push(TestEvent(10, RADAR_POWER_OFF,    STATE::OFF));
+
+    assert(start());
+}
+
+void  TestMachine::interleavedHold() {
+    //to test that warmup is delayed while in hold state
+    std::cout<<"\n\n **** STARTING TEST interleavedHold() ****"<<std::endl;
+
+    int s = 3; //between [1..WARMING_DELAY]
+
+    q.push(TestEvent(                   RADAR_POWER_ON,     STATE::OFF));
+    q.push(TestEvent(2,                 IOS_OPERATE,        STATE::WARMUP));
+    q.push(TestEvent(s,                 IOS_HOLD,           STATE::HOLD));
+    //after some time we switch back to IOS_OPERATE
+    q.push(TestEvent(12,                IOS_OPERATE,        STATE::WARMUP));
+    q.push(TestEvent(WARMING_DELAY-s+1, EVENT_NULL,         STATE::STANDBY));
+    q.push(TestEvent(1,                 WOW_FALSE,          STATE::ON));
+
+    assert(start());
+}
+
+
+void TestMachine::mixed() {
+
+    q.push(TestEvent(               IOS_OPERATE,     STATE::OFF));
+    q.push(TestEvent(               RADAR_POWER_ON,  STATE::WARMUP));
+    q.push(TestEvent(WARMING_DELAY, EVENT_NULL,      STATE::STANDBY));
+    q.push(TestEvent(               IOS_PAR_SET,     STATE::STANDBY));
+    q.push(TestEvent(               WOW_FALSE,       STATE::STANDBY));
+    q.push(TestEvent(4,             EVENT_NULL,      STATE::STANDBY));
+    q.push(TestEvent(               IOS_HOLD,        STATE::HOLD));
+    q.push(TestEvent(5,             RADAR_POWER_OFF, STATE::HOLD));
+    q.push(TestEvent(               IOS_PAUSE,       STATE::STANDBY));
+    q.push(TestEvent(1,             EVENT_NULL,      STATE::OFF));
+    q.push(TestEvent(               RADAR_POWER_ON,  STATE::WARMUP));
+    q.push(TestEvent(WARMING_DELAY, EVENT_NULL,      STATE::STANDBY));
+    q.push(TestEvent(1,             EVENT_NULL,      STATE::ON));
+
+    assert(start());
+}
+
+void TestMachine::mySequence() {
+
+
+    std::cout<<"\n\n **** STARTING TEST mySequence() ****"<<std::endl;
+
+    q.push(TestEvent(2, 867, STATE::OFF)); //invalid value
+    q.push(TestEvent(2, -34, STATE::OFF)); //invalid value
+
+    q.push(TestEvent(1,             RADAR_POWER_ON,  STATE::OFF));
+    q.push(TestEvent(2,             IOS_HOLD,        STATE::HOLD));
+    q.push(TestEvent(8,             IOS_OPERATE,     STATE::OFF));   // when we return from hold we go back to old state...
+    q.push(TestEvent(1,             EVENT_NULL,      STATE::WARMUP));// but we make sure to update next-step expected state!
+    q.push(TestEvent(WARMING_DELAY, EVENT_NULL,      STATE::STANDBY));
+    q.push(TestEvent(1,             WOW_FALSE,       STATE::ON));
+    q.push(TestEvent(2,             IOS_HOLD,        STATE::HOLD));
+    q.push(TestEvent(1,             WOW_TRUE,        STATE::HOLD));
+    q.push(TestEvent(11,            IOS_OPERATE,     STATE::ON));      // same thing happening here
+    q.push(TestEvent(1,             EVENT_NULL,      STATE::STANDBY)); // and here
+    q.push(TestEvent(1,             WOW_FALSE,       STATE::ON));
+    q.push(TestEvent(1,             IOS_PAR_SET,     STATE::ON));
+    q.push(TestEvent(1,             RADAR_POWER_OFF, STATE::ON));
+    q.push(TestEvent(11,            IOS_PAUSE,       STATE::OFF));
+
+
+    assert(start());
+
+}
+
+
+void TestMachine::testEvents() {
+
+
+    std::cout<<"\n\n **** STARTING TEST testEvents() ****"<<std::endl;
+
+    for (int i=EVENT_NULL; i>0; i--) {
+        q.push(TestEvent(1, i, STATE::OFF));
+    }
+    q.push(TestEvent(1, IOS_HOLD, STATE::HOLD));
+    assert(start());
+
+}
+
+
+bool TestMachine::start() {
+
+    fsm = new Machine(NULL, NULL);
+    m_leap = q.front().getLeap();
+
+    while (not q.empty()) {
+        m_loop++;
+        m_leap--;
+
+        if (0 == m_leap) {
+            std::cout<<"\nloop #"<<m_loop<<std::endl;
+            std::cout<<"************* TIME FOR OF EVENT # "<<m_event_n++<<" ("<</*events[*/static_cast<EVENT>(q.front().getEvent())/*]*/<<")"<<std::endl;
+            fsm->scheduleEvent(static_cast<EVENT>(q.front().getEvent()));
+            m_expected_state = q.front().getState();
+            q.pop();
+            m_leap = q.front().getLeap();
+        }
+        else
+            std::cout<<"loop #"<<m_loop<<std::endl;
+
+        fsm->step();
+        if (not fsm->shouldBe(m_expected_state)) {
+            reset();
+            return false;
+        }
+    }
+
+    fsm->step();
+    std::cout<<"\n\n*** TEST SUCCESSFUL!! ***\n\n"<<std::endl;
+    reset();
+    return true;
+}
